@@ -62,20 +62,20 @@ export class UsersService {
       secret: process.env.JWT_SECRET,
       expiresIn: '1d',
     });
-    return { access_token: token };
+    return { access_token: token, id: user.id, role: user.role };
   }
 
   async findAll() {
     const users = await this.usersRepository.find({
       where: {
         role: UserRole.USER,
-      }
+      },
     });
     return users;
   }
 
   async findOne(id: number) {
-    const user = await this.usersRepository.findOneBy({id});
+    const user = await this.usersRepository.findOneBy({ id });
     if (!user) {
       throw new NotFoundException('User not found');
     }

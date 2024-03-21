@@ -36,7 +36,7 @@ export class UsersController {
   @ApiOperation({ summary: 'Get all users' })
   @Role(UserRole.ADMIN)
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Get('')
   findAll() {
     return this.usersService.findAll();
@@ -45,7 +45,7 @@ export class UsersController {
   @ApiOperation({ summary: 'Get user by id' })
   @Role(UserRole.ADMIN)
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.usersService.findOne(+id);
