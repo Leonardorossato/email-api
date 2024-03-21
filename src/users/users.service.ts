@@ -5,15 +5,16 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
-import { User } from './entities/user.entity';
-import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
-import { RegisterUserDto, UserRole } from './dto/register-user.dto';
-import { LoginUserDto } from './dto/login-user.dto';
-import { JwtService } from '@nestjs/jwt';
+import { Repository } from 'typeorm';
 import { JwtStrategy } from '../guards/jwt.strategy';
+import { LoginUserDto } from './dto/login-user.dto';
+import { RegisterUserDto, UserRole } from './dto/register-user.dto';
+import { UpdateUserDto } from './dto/updade-user.dto';
+import { User } from './entities/user.entity';
 
 @Injectable()
 export class UsersService {
@@ -65,13 +66,23 @@ export class UsersService {
     return { access_token: token, id: user.id, role: user.role };
   }
 
-  async findAll() {
+  async findAll(page?: number, limit?: number, search?: string) {
+    const queyPage = Number(page) < 1 ? 1 : Number(page);
+    const queyLimit = Number(limit) > 10 ? 10 : Number(limit);
     const users = await this.usersRepository.find({
       where: {
-        role: UserRole.USER,
+        name: search?.length > 0 ? search : undefined, 
       },
+      skip: queyLimit * (queyPage - 1),
+      take: queyLimit,
     });
-    return users;
+    const countUsers = await this.usersRepository.count()
+    return {
+      users,
+      total: countUsers,
+      page: queyPage,
+      limit: queyLimit,
+    };
   }
 
   async findOne(id: number) {
@@ -80,5 +91,39 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
     return user;
+  }
+
+  async update(id: number, dto: UpdateUserDto) {
+    const user = await this.usersRepository.findOneBy({ id });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    const { name, email, role } = dto;
+    user.name = name;
+    user.email = email;
+    user.role = role ? role : user.role;
+    try {
+      await this.usersRepository.update(id, user);
+      return {
+        message: 'User updated successfully',
+      };
+    } catch (error) {
+      throw new InternalServerErrorException('Error updating user');
+    }
+  }
+
+  async remove(id: number) {
+    const user = await this.usersRepository.findOneBy({ id });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    try {
+      await this.usersRepository.remove(user);
+      return {
+        message: 'User removed successfully',
+      };
+    } catch (error) {
+      throw new InternalServerErrorException('Error removing user');
+    }
   }
 }

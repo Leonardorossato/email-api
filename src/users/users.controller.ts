@@ -1,20 +1,27 @@
 import {
-  Controller,
-  Get,
-  Post,
   Body,
-  Patch,
-  Param,
+  Controller,
   Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
-import { UsersService } from './users.service';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { RegisterUserDto, UserRole } from './dto/register-user.dto';
-import { LoginUserDto } from './dto/login-user.dto';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiQuery,
+  ApiTags
+} from '@nestjs/swagger';
+import { JwtAuthGuard } from '../guards/jwt.guard';
 import { Role } from '../guards/role.guard';
 import { RolesGuard } from '../guards/role.strategy';
-import { JwtAuthGuard } from '../guards/jwt.guard';
+import { LoginUserDto } from './dto/login-user.dto';
+import { RegisterUserDto, UserRole } from './dto/register-user.dto';
+import { UpdateUserDto } from './dto/updade-user.dto';
+import { UsersService } from './users.service';
 
 @Controller('users')
 @ApiTags('Users')
@@ -38,8 +45,27 @@ export class UsersController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Get('')
-  findAll() {
-    return this.usersService.findAll();
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    type: String,
+  })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+  })
+  findAll(
+    @Query('search') search?: string,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+  ) {
+    return this.usersService.findAll(page, limit, search);
   }
 
   @ApiOperation({ summary: 'Get user by id' })
@@ -49,5 +75,23 @@ export class UsersController {
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.usersService.findOne(+id);
+  }
+
+  @ApiOperation({ summary: 'Update user by id' })
+  @Role(UserRole.USER)
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Patch(':id')
+  update(@Param('id') id: number, @Body() updateUserDto: UpdateUserDto) {
+    return this.usersService.update(id, updateUserDto);
+  }
+
+  @ApiOperation({ summary: 'Delete user by id' })
+  @Role(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Delete(':id')
+  remove(@Param('id') id: string) {
+    return this.usersService.remove(+id);
   }
 }
