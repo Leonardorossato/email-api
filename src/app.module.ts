@@ -6,6 +6,11 @@ import { UsersModule } from './users/users.module';
 import { AdminModule } from './admin/admin.module';
 
 @Module({
-  imports: [ConfigModule.forRoot(), TypeOrmModule.forRootAsync(typeOrmConfig), UsersModule, AdminModule],
+  imports: [
+    ConfigModule.forRoot(),
+    TypeOrmModule.forRootAsync(typeOrmConfig),
+    UsersModule,
+    AdminModule,
+  ],
 })
 export class AppModule {}

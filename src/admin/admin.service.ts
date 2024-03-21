@@ -1,17 +1,22 @@
 import { Injectable, UnprocessableEntityException } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { User } from '../users/entities/user.entity';
-import { UserRole } from '../users/dto/register-user.dto';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
+import { Repository } from 'typeorm';
+import { UserRole } from '../users/dto/register-user.dto';
+import { User } from '../users/entities/user.entity';
+import { LoginAdminDto } from './dto/login-admin.dto';
 import { RegisterAdminDto } from './dto/register-admin.dto';
+import { JwtStrategy } from '../guards/jwt.strategy';
 
 @Injectable()
 export class AdminService {
   constructor(
     @InjectRepository(User)
     private readonly adminRepository: Repository<User>,
+    private readonly jwtStrategy: JwtStrategy,
+    private readonly jwtService: JwtService,
   ) {}
   async register(dto: RegisterAdminDto) {
     const { name, email, password } = dto;
@@ -29,5 +34,26 @@ export class AdminService {
     } else {
       return await this.adminRepository.save(admin);
     }
+  }
+
+  async login(dto: LoginAdminDto) {
+    const { email, password } = dto;
+    const admin = await this.adminRepository.findOneBy({ email });
+    if (!admin) {
+      throw new UnprocessableEntityException('Email not found');
+    }
+    if (admin == null) {
+      throw new UnprocessableEntityException('Credentials not valid');
+    }
+    const isPasswordValid = await bcrypt.compare(password, admin.password);
+    if (!isPasswordValid) {
+      throw new UnprocessableEntityException('Passwords not match');
+    }
+    const payload = await this.jwtStrategy.validateAdmin(admin);
+    const token = await this.jwtService.sign(payload, {
+      secret: process.env.JWT_SECRET,
+      expiresIn: '1d',
+    });
+    return { access_token: token, id: admin.id };
   }
 }
