@@ -9,6 +9,7 @@ import { User } from '../users/entities/user.entity';
 import { LoginAdminDto } from './dto/login-admin.dto';
 import { RegisterAdminDto } from './dto/register-admin.dto';
 import { JwtStrategy } from '../guards/jwt.strategy';
+import { MailerService } from '@nestjs-modules/mailer';
 
 @Injectable()
 export class AdminService {
@@ -17,6 +18,7 @@ export class AdminService {
     private readonly adminRepository: Repository<User>,
     private readonly jwtStrategy: JwtStrategy,
     private readonly jwtService: JwtService,
+    private readonly nodemailerService: MailerService,
   ) {}
   async register(dto: RegisterAdminDto) {
     const { name, email, password } = dto;
@@ -32,6 +34,15 @@ export class AdminService {
         'Password confirmation is incorrect',
       );
     } else {
+      await this.nodemailerService.sendMail({
+        to: admin.email,
+        from: 'noreply@application.com',
+        subject: 'Confirm your account',
+        template: 'email-confirmation',
+        context: {
+          token: admin.confirmationToken,
+        },
+      });
       return await this.adminRepository.save(admin);
     }
   }
@@ -54,6 +65,10 @@ export class AdminService {
       secret: process.env.JWT_SECRET,
       expiresIn: '1d',
     });
-    return { access_token: token, id: admin.id };
+    return {
+      access_token: token,
+      id: admin.id,
+      confirmationToken: admin.confirmationToken,
+    };
   }
 }

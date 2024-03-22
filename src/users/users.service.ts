@@ -15,6 +15,7 @@ import { LoginUserDto } from './dto/login-user.dto';
 import { RegisterUserDto, UserRole } from './dto/register-user.dto';
 import { UpdateUserDto } from './dto/updade-user.dto';
 import { User } from './entities/user.entity';
+import { MailerService } from '@nestjs-modules/mailer';
 
 @Injectable()
 export class UsersService {
@@ -23,6 +24,7 @@ export class UsersService {
     private readonly usersRepository: Repository<User>,
     private readonly jwtStrategy: JwtStrategy,
     private readonly jwtService: JwtService,
+    private readonly nodemailerService: MailerService,
   ) {}
   async register(dto: RegisterUserDto) {
     const { name, email, password } = dto;
@@ -36,6 +38,15 @@ export class UsersService {
 
     try {
       const newUser = await this.usersRepository.save(user);
+      await this.nodemailerService.sendMail({
+        to: user.email,
+        from: 'noreply@application.com',
+        subject: 'Confirm your account',
+        template: 'email-confirmation',
+        context: {
+          token: user.confirmationToken,
+        },
+      });
       return newUser;
     } catch (error) {
       if (error.code === '23505') {
@@ -71,12 +82,12 @@ export class UsersService {
     const queyLimit = Number(limit) > 10 ? 10 : Number(limit);
     const users = await this.usersRepository.find({
       where: {
-        name: search?.length > 0 ? search : undefined, 
+        name: search?.length > 0 ? search : undefined,
       },
       skip: queyLimit * (queyPage - 1),
       take: queyLimit,
     });
-    const countUsers = await this.usersRepository.count()
+    const countUsers = await this.usersRepository.count();
     return {
       users,
       total: countUsers,
