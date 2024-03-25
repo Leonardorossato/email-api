@@ -1,10 +1,11 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { UserRole } from '@prisma/client';
 import { IsOptional } from 'class-validator';
-import { UserRole } from '../../users/dto/register-user.dto';
 
 export class RegisterAdminDto {
   @ApiProperty({
     example: 'Jhon Doe',
+    type: String,
     description: 'The name of the User',
   })
   name: string;

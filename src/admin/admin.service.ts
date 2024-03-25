@@ -1,44 +1,65 @@
-import { Injectable, UnprocessableEntityException } from '@nestjs/common';
+import { MailerService } from '@nestjs-modules/mailer';
+import {
+  Inject,
+  Injectable,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { InjectRepository } from '@nestjs/typeorm';
+import { PrismaClient, UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
-import { Repository } from 'typeorm';
-import { UserRole } from '../users/dto/register-user.dto';
-import { User } from '../users/entities/user.entity';
+import * as path from 'path';
+import { JwtStrategy } from '../guards/jwt.strategy';
 import { LoginAdminDto } from './dto/login-admin.dto';
 import { RegisterAdminDto } from './dto/register-admin.dto';
-import { JwtStrategy } from '../guards/jwt.strategy';
 
 @Injectable()
 export class AdminService {
   constructor(
-    @InjectRepository(User)
-    private readonly adminRepository: Repository<User>,
+    @Inject('db__client')
+    private readonly dbClient: PrismaClient,
     private readonly jwtStrategy: JwtStrategy,
     private readonly jwtService: JwtService,
+    private readonly mailService: MailerService,
   ) {}
+
+  private readonly adminRepository = this.dbClient.users;
+
   async register(dto: RegisterAdminDto) {
-    const { name, email, password } = dto;
-    const admin = new User();
-    admin.name = name;
-    admin.email = email;
-    admin.password = await bcrypt.hash(password, 10);
-    admin.role = admin.role || UserRole.ADMIN;
-    admin.status = true;
-    admin.confirmationToken = crypto.randomBytes(32).toString('hex');
+    const { name, email, password, role } = dto;
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const confirmationToken = crypto.randomBytes(32).toString('hex');
+    const userAdminCreated = await this.adminRepository.create({
+      data: {
+        ...dto,
+        password: hashedPassword,
+        role: role || UserRole.ADMIN,
+        confirmationToken: confirmationToken,
+        recoverToken: null,
+      },
+    });
+    await this.mailService.sendMail({
+      to: email,
+      from: 'noreply@application.com',
+      subject: 'Confirm your account',
+      template: 'email-confirmation',
+      context: {
+        token: confirmationToken,
+      },
+    });
     if (dto.password !== dto.passwordConfirmation) {
       throw new UnprocessableEntityException(
         'Password confirmation is incorrect',
       );
-    } else {
-      return await this.adminRepository.save(admin);
     }
+    return userAdminCreated;
   }
 
   async login(dto: LoginAdminDto) {
     const { email, password } = dto;
-    const admin = await this.adminRepository.findOneBy({ email });
+    const admin = await this.adminRepository.findFirst({
+      where: { email: email },
+    });
     if (!admin) {
       throw new UnprocessableEntityException('Email not found');
     }
@@ -49,11 +70,17 @@ export class AdminService {
     if (!isPasswordValid) {
       throw new UnprocessableEntityException('Passwords not match');
     }
-    const payload = await this.jwtStrategy.validateAdmin(admin);
-    const token = await this.jwtService.sign(payload, {
+    const payload = await this.jwtStrategy.validateAdmin({
+      id: admin.id,
+      role: admin.role,
+    });
+    const token = this.jwtService.sign(payload, {
       secret: process.env.JWT_SECRET,
       expiresIn: '1d',
     });
-    return { access_token: token, id: admin.id };
+    return {
+      access_token: token,
+      id: admin.id,
+    };
   }
 }

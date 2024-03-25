@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { UserRole } from '@prisma/client';
 import { IsEmail, IsOptional } from 'class-validator';
 
 export class RegisterUserDto {
@@ -26,9 +27,4 @@ export class RegisterUserDto {
   passwordConfirmation: string;
 
   role?: UserRole;
-}
-
-export enum UserRole {
-  ADMIN = 'admin',
-  USER = 'user',
 }
