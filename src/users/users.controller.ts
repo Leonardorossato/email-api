@@ -11,17 +11,20 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiBody,
   ApiOperation,
   ApiQuery,
-  ApiTags
+  ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../guards/jwt.guard';
 import { Role } from '../guards/role.guard';
 import { RolesGuard } from '../guards/role.strategy';
 import { LoginUserDto } from './dto/login-user.dto';
-import { RegisterUserDto, UserRole } from './dto/register-user.dto';
+import { RegisterUserDto } from './dto/register-user.dto';
 import { UpdateUserDto } from './dto/updade-user.dto';
 import { UsersService } from './users.service';
+import { UserRole } from '@prisma/client';
+import { ChangePasswordDTo } from './dto/change-password.dto';
 
 @Controller('users')
 @ApiTags('Users')
@@ -38,6 +41,29 @@ export class UsersController {
   @Post('/login')
   login(@Body() dto: LoginUserDto) {
     return this.usersService.login(dto);
+  }
+
+  @ApiOperation({ summary: 'Send a Recovery password' })
+  @ApiBearerAuth()
+  @Post('/recovery-email')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Role(UserRole.USER)
+  @ApiBody({
+    description: 'The recovery email',
+    examples: {
+      user: {
+        value: {
+          email: 'example@example.com',
+        },
+      },
+    },
+    type: String,
+  })
+  sendRecoveryPasswordEmail(@Body('email') email: string) {
+    this.usersService.sendRecoveryPasswordEmail(email);
+    return {
+      message: 'Was send a email with instructions to reset your password.',
+    };
   }
 
   @ApiOperation({ summary: 'Get all users' })
@@ -84,6 +110,36 @@ export class UsersController {
   @Patch(':id')
   update(@Param('id') id: number, @Body() updateUserDto: UpdateUserDto) {
     return this.usersService.update(id, updateUserDto);
+  }
+
+  @ApiOperation({ summary: 'Send a token to confirm your email' })
+  @Role(UserRole.USER)
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Patch('token/:confirmationToken')
+  async confirmationEmail(
+    @Param('confirmationToken') confirmationToken: string,
+  ) {
+    await this.usersService.confirmEmail(confirmationToken);
+    return {
+      message: 'Email confirmation sent successfully.',
+    };
+  }
+
+  @ApiOperation({ summary: 'Change Password' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Role(UserRole.USER)
+  @ApiBearerAuth()
+  @Patch('reset-pasword/:token')
+  async resetPassword(
+    @Param('token') token: string,
+    @Body() dto: ChangePasswordDTo, 
+  ) {
+    console.log(token);
+    await this.usersService.resetPassword(token, dto);
+    return {
+      message: 'Password changed successfully.',
+    };
   }
 
   @ApiOperation({ summary: 'Delete user by id' })

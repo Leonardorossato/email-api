@@ -1,64 +1,70 @@
+import { MailerService } from '@nestjs-modules/mailer';
 import {
   ConflictException,
+  Inject,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
   UnauthorizedException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { InjectRepository } from '@nestjs/typeorm';
+import { PrismaClient, UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
-import { Repository } from 'typeorm';
 import { JwtStrategy } from '../guards/jwt.strategy';
 import { LoginUserDto } from './dto/login-user.dto';
-import { RegisterUserDto, UserRole } from './dto/register-user.dto';
+import { RegisterUserDto } from './dto/register-user.dto';
 import { UpdateUserDto } from './dto/updade-user.dto';
-import { User } from './entities/user.entity';
-import { MailerService } from '@nestjs-modules/mailer';
+import { ChangePasswordDTo } from './dto/change-password.dto';
 
 @Injectable()
 export class UsersService {
   constructor(
-    @InjectRepository(User)
-    private readonly usersRepository: Repository<User>,
+    @Inject('db__client')
+    private readonly dbClienbt: PrismaClient,
     private readonly jwtStrategy: JwtStrategy,
     private readonly jwtService: JwtService,
-    private readonly nodemailerService: MailerService,
+    private readonly mailService: MailerService,
   ) {}
+  private readonly usersRepository = this.dbClienbt.users;
   async register(dto: RegisterUserDto) {
-    const { name, email, password } = dto;
-    const user = new User();
-    user.name = name;
-    user.email = email;
-    user.password = await bcrypt.hash(password, 10);
-    user.role = user.role || UserRole.USER;
-    user.status = true;
-    user.confirmationToken = crypto.randomBytes(32).toString('hex');
-
-    try {
-      const newUser = await this.usersRepository.save(user);
-      await this.nodemailerService.sendMail({
-        to: user.email,
-        from: 'noreply@application.com',
-        subject: 'Confirm your account',
-        template: 'email-confirmation',
-        context: {
-          token: user.confirmationToken,
-        },
-      });
-      return newUser;
-    } catch (error) {
-      if (error.code === '23505') {
-        throw new ConflictException('Email already exists');
-      }
-      throw new InternalServerErrorException('Error creating user');
+    const { name, email, password, role } = dto;
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const confirmationToken = crypto.randomBytes(32).toString('hex');
+    const users = await this.usersRepository.create({
+      data: {
+        ...dto,
+        password: hashedPassword,
+        role: role || UserRole.USER,
+        confirmationToken: confirmationToken,
+        recoverToken: null,
+      },
+    });
+    await this.mailService.sendMail({
+      to: email,
+      from: 'noreply@application.com',
+      subject: 'Confirm your account',
+      template: 'email-confirmation',
+      context: {
+        token: confirmationToken,
+      },
+    });
+    if (dto.password !== dto.passwordConfirmation) {
+      throw new UnprocessableEntityException(
+        'Password confirmation is incorrect',
+      );
     }
+    return users;
   }
 
   async login(dto: LoginUserDto) {
     const { email, password } = dto;
-    const user = await this.usersRepository.findOneBy({ email });
+    const user = await this.usersRepository.findFirst({
+      where: {
+        email: email,
+      },
+    });
     if (!user) {
       throw new ConflictException('Email not found');
     }
@@ -80,24 +86,22 @@ export class UsersService {
   async findAll(page?: number, limit?: number, search?: string) {
     const queyPage = Number(page) < 1 ? 1 : Number(page);
     const queyLimit = Number(limit) > 10 ? 10 : Number(limit);
-    const users = await this.usersRepository.find({
+    const users = await this.usersRepository.findMany({
       where: {
         name: search?.length > 0 ? search : undefined,
       },
-      skip: queyLimit * (queyPage - 1),
-      take: queyLimit,
     });
     const countUsers = await this.usersRepository.count();
     return {
       users,
-      total: countUsers,
+      countUsers,
       page: queyPage,
       limit: queyLimit,
     };
   }
 
   async findOne(id: number) {
-    const user = await this.usersRepository.findOneBy({ id });
+    const user = await this.usersRepository.findFirst({ where: { id: id } });
     if (!user) {
       throw new NotFoundException('User not found');
     }
@@ -105,7 +109,7 @@ export class UsersService {
   }
 
   async update(id: number, dto: UpdateUserDto) {
-    const user = await this.usersRepository.findOneBy({ id });
+    const user = await this.usersRepository.findFirst({ where: { id: id } });
     if (!user) {
       throw new NotFoundException('User not found');
     }
@@ -114,7 +118,12 @@ export class UsersService {
     user.email = email;
     user.role = role ? role : user.role;
     try {
-      await this.usersRepository.update(id, user);
+      await this.usersRepository.update({
+        where: {
+          id: id,
+        },
+        data: user,
+      });
       return {
         message: 'User updated successfully',
       };
@@ -124,17 +133,97 @@ export class UsersService {
   }
 
   async remove(id: number) {
-    const user = await this.usersRepository.findOneBy({ id });
+    const user = await this.usersRepository.findFirst({ where: { id: id } });
     if (!user) {
       throw new NotFoundException('User not found');
     }
     try {
-      await this.usersRepository.remove(user);
+      await this.usersRepository.delete({
+        where: { id: id },
+      });
       return {
         message: 'User removed successfully',
       };
     } catch (error) {
       throw new InternalServerErrorException('Error removing user');
     }
+  }
+
+  async confirmEmail(confirmationToken: string) {
+    const user = await this.usersRepository.findFirst({
+      where: { confirmationToken: confirmationToken },
+    });
+    if (!user) {
+      throw new NotFoundException('Confirmation token not found');
+    }
+    return await this.usersRepository.update({
+      where: { id: user.id, confirmationToken: confirmationToken },
+      data: { confirmationToken: null },
+    });
+  }
+
+  async sendRecoveryPasswordEmail(email: string): Promise<any> {
+    const user = await this.usersRepository.findFirst({
+      where: { email: email },
+    });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    await this.usersRepository.update({
+      where: { email: email },
+      data: {
+        recoverToken: (user.recoverToken = crypto
+          .randomBytes(32)
+          .toString('hex')),
+      },
+    });
+    const mail = {
+      to: user.email,
+      from: 'noreply@application.com',
+      subject: 'Recuperação de senha',
+      template: 'recover-password',
+      context: {
+        token: user.recoverToken,
+      },
+    };
+    await this.mailService.sendMail(mail);
+  }
+
+  async resetPassword(
+    recoverToken: string,
+    changePasswordDto: ChangePasswordDTo,
+  ) {
+    const user = await this.usersRepository.findFirst({
+      where: {
+        recoverToken,
+      },
+    });
+    if (!user) {
+      throw new NotFoundException('Recover token not found');
+    }
+    try {
+      await this.changePassword(user.id, changePasswordDto);
+    } catch (error) {
+      throw new InternalServerErrorException(error);
+    }
+  }
+
+  async changePassword(id: number, dto: ChangePasswordDTo) {
+    const { password, passwordConfirmation } = dto;
+    const user = await this.usersRepository.findFirst({
+      where: { id: id },
+    });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if (password !== passwordConfirmation) {
+      throw new UnprocessableEntityException('Password dosent matches');
+    }
+    const hashedPassword = await bcrypt.hash(user.password, 10);
+    return await this.usersRepository.update({
+      where: { id: id },
+      data: { password: hashedPassword },
+    });
   }
 }
