@@ -66,7 +66,7 @@ export class UsersController {
     };
   }
 
-  @ApiOperation({ summary: 'Get all users' })
+  @ApiOperation({ summary: 'All users with some pagination' })
   @Role(UserRole.ADMIN)
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -86,12 +86,20 @@ export class UsersController {
     required: false,
     type: Number,
   })
-  findAll(
+  pagination(
     @Query('search') search?: string,
     @Query('page') page?: number,
     @Query('limit') limit?: number,
   ) {
-    return this.usersService.findAll(page, limit, search);
+    return this.usersService.findUsersPaginations(page, limit, search);
+  }
+
+  @ApiOperation({ summary: 'Find all users' })
+  @Get('/all')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Role(UserRole.ADMIN)
+  async findAll() {
+    return await this.usersService.findAll();
   }
 
   @ApiOperation({ summary: 'Get user by id' })
@@ -133,7 +141,7 @@ export class UsersController {
   @Patch('reset-pasword/:token')
   async resetPassword(
     @Param('token') token: string,
-    @Body() dto: ChangePasswordDTo, 
+    @Body() dto: ChangePasswordDTo,
   ) {
     console.log(token);
     await this.usersService.resetPassword(token, dto);

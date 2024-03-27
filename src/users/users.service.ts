@@ -9,25 +9,26 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { PrismaClient, UserRole } from '@prisma/client';
+import { PrismaClient, UserRole, Users } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { JwtStrategy } from '../guards/jwt.strategy';
+import { ChangePasswordDTo } from './dto/change-password.dto';
 import { LoginUserDto } from './dto/login-user.dto';
 import { RegisterUserDto } from './dto/register-user.dto';
 import { UpdateUserDto } from './dto/updade-user.dto';
-import { ChangePasswordDTo } from './dto/change-password.dto';
 
 @Injectable()
 export class UsersService {
   constructor(
-    @Inject('db__client')
-    private readonly dbClienbt: PrismaClient,
+    @Inject('dbclient') private readonly dbClienbt: PrismaClient,
     private readonly jwtStrategy: JwtStrategy,
     private readonly jwtService: JwtService,
     private readonly mailService: MailerService,
   ) {}
+
   private readonly usersRepository = this.dbClienbt.users;
+
   async register(dto: RegisterUserDto) {
     const { name, email, password, role } = dto;
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -37,6 +38,7 @@ export class UsersService {
         ...dto,
         password: hashedPassword,
         role: role || UserRole.USER,
+        passwordConfirmation: hashedPassword,
         confirmationToken: confirmationToken,
         recoverToken: null,
       },
@@ -83,12 +85,25 @@ export class UsersService {
     return { access_token: token, id: user.id, role: user.role };
   }
 
-  async findAll(page?: number, limit?: number, search?: string) {
+  async findAll() {
+    const users = await this.usersRepository.findMany();
+    return users;
+  }
+
+  async findUsersPaginations(page?: number, limit?: number, search?: string) {
     const queyPage = Number(page) < 1 ? 1 : Number(page);
     const queyLimit = Number(limit) > 10 ? 10 : Number(limit);
     const users = await this.usersRepository.findMany({
       where: {
-        name: search?.length > 0 ? search : undefined,
+        AND: [
+          {
+            OR: [
+              {
+                name: search ? search : undefined,
+              },
+            ],
+          },
+        ],
       },
     });
     const countUsers = await this.usersRepository.count();

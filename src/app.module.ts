@@ -10,10 +10,9 @@ import { mailerConfig } from './config/mailer.config';
 import { winstonConfig } from './config/winston.config';
 import { LoggerInterceptor } from './interceptors/logger.interceptor';
 import { UsersModule } from './users/users.module';
-
 @Module({
   imports: [
-    ConfigModule.forRoot(),
+    ConfigModule.forRoot({ isGlobal: true }),
     WinstonModule.forRoot(winstonConfig),
     MailerModule.forRoot(mailerConfig),
     PassportModule.register({ defaultStrategy: 'jwt' }),
